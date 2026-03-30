@@ -27,10 +27,6 @@ def decode_texture_name(tex_raw, u2_first2):
     return ''.join(reversed(chars)).lstrip('0').rstrip('%') or None
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  BSA ARCHIVE
-# ═══════════════════════════════════════════════════════════════════════════
-
 def _lzss(fd):
     window = array('B', b' ' * 4078 + b'\x00' * 18)
     pos = 4078; out = BytesIO()
@@ -58,8 +54,6 @@ def _lzss(fd):
 
 
 class BSAArchive:
-    """Lazy BSA archive — reads TOC upfront, decompresses on demand."""
-
     def __init__(self, path):
         with open(path, 'rb') as f: self._data = f.read()
         count, _ = unpack_from('<2H', self._data, 0)
@@ -88,10 +82,6 @@ class BSAArchive:
             except: pass
         self._cache[name] = raw; return raw
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  BSI TEXTURE
-# ═══════════════════════════════════════════════════════════════════════════
 
 def _bsi_chunks(data):
     chunks = {}
@@ -137,7 +127,6 @@ def _bsi_decompress(data, width, th):
 
 
 def bsi_decode_image(bsi_data):
-    """Full BSI decode → (width, height, flat_rgba_floats) or None."""
     chunks = _bsi_chunks(bsi_data); bhdr = chunks.get('BHDR')
     if not bhdr or len(bhdr) < 26: return None
     w, h = unpack_from('<2h', bhdr, 4)
@@ -171,10 +160,6 @@ def bsi_decode_image(bsi_data):
         return (w, h, pixels)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  UV HELPER
-# ═══════════════════════════════════════════════════════════════════════════
-
 def _uv_from_xyz(pts, uvs, tp):
     if len(pts)<3 or len(uvs)<3: return uvs[-1] if uvs else (0.0,0.0)
     try:
@@ -189,10 +174,6 @@ def _uv_from_xyz(pts, uvs, tp):
         return(u0+s*eu1[0]+t*eu2[0], v0+s*eu1[1]+t*eu2[1])
     except: return uvs[-1] if uvs else (0.0,0.0)
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  .3D PARSER
-# ═══════════════════════════════════════════════════════════════════════════
 
 def parse_3d(data, tex_sizes):
     if len(data) < 64: return None
@@ -243,10 +224,6 @@ def parse_3d(data, tex_sizes):
     return {'points':points,'planes':planes,'radius':hdr['radius']*0.0001,'texture_names':sorted(texture_names)}
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  BS6 SCENE
-# ═══════════════════════════════════════════════════════════════════════════
-
 def bs6_blocks(data):
     pos = 0
     while pos + 8 <= len(data):
@@ -278,10 +255,6 @@ def parse_bs6_scene(data):
                             objects.append({'mesh': mesh, 'pos': pos or (0,0,0), 'rot': rot or (0,0,0)})
     return objects
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  ROTATION
-# ═══════════════════════════════════════════════════════════════════════════
 
 def _fixed_to_rad(v): return v * math.tau / 2048.0
 

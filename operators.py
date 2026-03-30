@@ -11,23 +11,13 @@ from .core import parse_3d, parse_bs6_scene
 from .builder import RM, build_mesh_object, build_level, OVERSIZE_RADIUS
 
 
-def _ensure_loaded(context):
-    """Check if RM is loaded. Returns True/False."""
-    return RM.is_loaded
-
-
-def _get_gamedata(context):
-    prefs = context.preferences.addons[__package__].preferences
-    return prefs.gamedata_path
-
-
 class BS_OT_LoadData(Operator):
     bl_idname = "battlespire.load_data"
     bl_label = "Load Game Data"
     bl_description = "Load Battlespire archives (may take a moment)"
 
     def execute(self, context):
-        gd = _get_gamedata(context)
+        gd = context.preferences.addons[__package__].preferences.gamedata_path
         if not gd or not os.path.isdir(gd):
             self.report({'ERROR'}, "GAMEDATA path not set. Open addon preferences.")
             return {'CANCELLED'}
@@ -51,7 +41,7 @@ class BS_OT_ImportLevel(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        if not _ensure_loaded(context):
+        if not RM.is_loaded:
             self.report({'ERROR'}, "Load game data first."); return {'CANCELLED'}
         level = context.scene.bs_props.level_enum
         if not level or level == 'NONE':
@@ -88,7 +78,7 @@ class BS_OT_ImportUnused(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        if not _ensure_loaded(context):
+        if not RM.is_loaded:
             self.report({'ERROR'}, "Load game data first."); return {'CANCELLED'}
 
         t0 = time.time()
@@ -106,7 +96,6 @@ class BS_OT_ImportUnused(Operator):
         bpy.context.scene.collection.children.link(col_normal)
         col_large = bpy.data.collections.new("Others_Oversized")
         bpy.context.scene.collection.children.link(col_large)
-        # Hide oversized collection by default in viewport
         for vl in bpy.context.scene.view_layers:
             lc = vl.layer_collection.children.get("Others_Oversized")
             if lc: lc.exclude = True
@@ -141,7 +130,7 @@ class BS_OT_ImportModelByName(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        if not _ensure_loaded(context):
+        if not RM.is_loaded:
             self.report({'ERROR'}, "Load game data first."); return {'CANCELLED'}
         name = context.scene.bs_props.model_name.strip().upper()
         if not name:

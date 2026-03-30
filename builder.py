@@ -1,5 +1,7 @@
 """
 Blender mesh/material builders and resource manager.
+Key principle: NEVER cache bpy.types references — they become invalid on undo/load.
+Instead, cache only names and use bpy.data.*.get(name) every time.
 """
 
 import bpy
@@ -10,16 +12,10 @@ from .core import (
     parse_bs6_scene, rotate_point, SCENE_SCALE,
 )
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  RESOURCE MANAGER
-# ═══════════════════════════════════════════════════════════════════════════
-
-# Radius threshold: models larger than this go to "Oversized" collection
 OVERSIZE_RADIUS = 5.0
 
 
 class ResourceManager:
-    """Singleton managing all game archives and Blender caches."""
 
     def __init__(self):
         self.reset()
@@ -33,15 +29,13 @@ class ResourceManager:
         self._bs6_bsa = None
         self.tex_sizes = {}
         self._bsi_name_index = {}
-        self._bl_images = {}
-        self._bl_materials = {}
+        self._failed_images = set()
 
     @property
     def is_loaded(self):
         return self._loaded
 
     def load(self, gamedata_path):
-        """Load all archives. Call once from 'Load Data' button."""
         if self._loaded and self._gamedata == gamedata_path:
             return True
         self.reset()
@@ -95,48 +89,72 @@ class ResourceManager:
         matches = sorted([v for k, v in self._bsi_name_index.items() if k.startswith(tex_name)])
         return matches[0] if len(matches) == 1 else None
 
-    # ── Blender image cache ───────────────────────────────────────────────
+    # ── Blender image — always lookup by name, decode on miss ─────────
+
+    @staticmethod
+    def _img_bl_name(tex_name):
+        return f"bs_{tex_name}"
 
     def get_image(self, tex_name):
-        if tex_name in self._bl_images: return self._bl_images[tex_name]
+        bl_name = self._img_bl_name(tex_name)
+        existing = bpy.data.images.get(bl_name)
+        if existing:
+            return existing
+        if bl_name in self._failed_images:
+            return None
+
         bsi_fname = self.resolve_bsi(tex_name)
         bsi_data = self._bsi_bsa.get(bsi_fname) if bsi_fname and self._bsi_bsa else None
-        if not bsi_data: self._bl_images[tex_name] = None; return None
+        if not bsi_data:
+            self._failed_images.add(bl_name)
+            return None
         result = bsi_decode_image(bsi_data)
-        if not result: self._bl_images[tex_name] = None; return None
+        if not result:
+            self._failed_images.add(bl_name)
+            return None
         w, h, pixels = result
-        img = bpy.data.images.new(tex_name, w, h, alpha=True)
-        img.pixels = pixels; img.pack()
-        self._bl_images[tex_name] = img; return img
+        img = bpy.data.images.new(bl_name, w, h, alpha=True)
+        img.pixels = pixels
+        img.pack()
+        return img
 
-    # ── Blender material cache ────────────────────────────────────────────
+    # ── Blender material — always lookup by name, create on miss ──────
+
+    @staticmethod
+    def _mat_bl_name(tex_name, color):
+        if tex_name:
+            return f"bs_{tex_name}"
+        r, g, b = round(color[0], 3), round(color[1], 3), round(color[2], 3)
+        return f"bs_solid_{r}_{g}_{b}"
 
     def get_material(self, tex_name, color):
-        if tex_name: mk = ('t', tex_name)
-        else: mk = ('c', round(color[0],3), round(color[1],3), round(color[2],3))
-        if mk in self._bl_materials: return self._bl_materials[mk]
+        mat_name = self._mat_bl_name(tex_name, color)
+        existing = bpy.data.materials.get(mat_name)
+        if existing:
+            return existing
 
-        mat = bpy.data.materials.new(name=tex_name if tex_name else f"solid_{len(self._bl_materials):04d}")
+        mat = bpy.data.materials.new(name=mat_name)
         mat.use_nodes = True
-        nodes = mat.node_tree.nodes; links = mat.node_tree.links; nodes.clear()
+        nodes = mat.node_tree.nodes
+        links = mat.node_tree.links
+        nodes.clear()
 
-        bsdf = nodes.new('ShaderNodeBsdfPrincipled'); bsdf.location = (0,0)
+        bsdf = nodes.new('ShaderNodeBsdfPrincipled')
+        bsdf.location = (0, 0)
         bsdf.inputs['Metallic'].default_value = 0.0
         bsdf.inputs['Roughness'].default_value = 1.0
 
-        # IOR input — name changed across Blender versions
         for ior_name in ['IOR', 'IOR Level']:
             if ior_name in bsdf.inputs:
                 bsdf.inputs[ior_name].default_value = 1.0
                 break
-
-        # Specular — zero it out across versions
         for spec_name in ['Specular IOR Level', 'Specular']:
             if spec_name in bsdf.inputs:
                 bsdf.inputs[spec_name].default_value = 0.0
                 break
 
-        out = nodes.new('ShaderNodeOutputMaterial'); out.location = (300,0)
+        out = nodes.new('ShaderNodeOutputMaterial')
+        out.location = (300, 0)
         links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
 
         if tex_name and tex_name.startswith('1_'):
@@ -145,8 +163,11 @@ class ResourceManager:
         elif tex_name:
             img = self.get_image(tex_name)
             if img:
-                tx = nodes.new('ShaderNodeTexImage'); tx.location = (-400,0)
-                tx.image = img; tx.interpolation = 'Closest'; tx.extension = 'REPEAT'
+                tx = nodes.new('ShaderNodeTexImage')
+                tx.location = (-400, 0)
+                tx.image = img
+                tx.interpolation = 'Closest'
+                tx.extension = 'REPEAT'
                 links.new(tx.outputs['Color'], bsdf.inputs['Base Color'])
             else:
                 bsdf.inputs['Base Color'].default_value = (*color, 1.0)
@@ -154,11 +175,10 @@ class ResourceManager:
             bsdf.inputs['Base Color'].default_value = (*color, 1.0)
 
         mat.use_backface_culling = False
-        self._bl_materials[mk] = mat; return mat
+        return mat
 
     @staticmethod
     def _set_alpha_clip(mat):
-        """Set alpha clip mode — compatible with Blender 3.x through 5.x."""
         try:
             mat.blend_method = 'CLIP'
             mat.alpha_threshold = 0.5
@@ -168,12 +188,12 @@ class ResourceManager:
 
 RM = ResourceManager()
 
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  MESH BUILDERS
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_mesh_object(model, name, collection):
-    """Build a single Blender object from a parsed .3D model."""
     stem = os.path.splitext(name)[0]
     mat_groups = defaultdict(list)
     for plane in model['planes']:
@@ -184,32 +204,38 @@ def build_mesh_object(model, name, collection):
         mat_groups[mk].append(plane)
     if not mat_groups: return None
 
-    mat_keys = list(mat_groups.keys()); mk2i = {mk: i for i, mk in enumerate(mat_keys)}
-    verts=[]; faces=[]; uvs=[]; mat_ids=[]; vi=0
+    mat_keys = list(mat_groups.keys())
+    mk2i = {mk: i for i, mk in enumerate(mat_keys)}
+    verts = []; faces = []; uvs = []; mat_ids = []; vi = 0
     for mk, plist in mat_groups.items():
         mi = mk2i[mk]
         for plane in plist:
             vs = plane['vertices']
             for i in range(1, len(vs)-1):
                 for j in (0, i, i+1):
-                    vx,vy,vz,u,v = vs[j]; verts.append((vx,vy,vz)); uvs.append((u,v))
+                    vx,vy,vz,u,v = vs[j]
+                    verts.append((vx,vy,vz)); uvs.append((u,v))
                 faces.append((vi,vi+1,vi+2)); mat_ids.append(mi); vi += 3
 
-    mesh = bpy.data.meshes.new(stem); mesh.from_pydata(verts, [], faces)
+    mesh = bpy.data.meshes.new(stem)
+    mesh.from_pydata(verts, [], faces)
     for mk in mat_keys:
         rep = mat_groups[mk][0]
         mesh.materials.append(RM.get_material(rep['texture_name'], rep['color']))
-    for fi, mi in enumerate(mat_ids): mesh.polygons[fi].material_index = mi
+    for fi, mi in enumerate(mat_ids):
+        mesh.polygons[fi].material_index = mi
     uv_layer = mesh.uv_layers.new(name='UVMap')
-    for li, loop in enumerate(mesh.loops): uv_layer.data[li].uv = uvs[loop.vertex_index]
+    for li, loop in enumerate(mesh.loops):
+        uv_layer.data[li].uv = uvs[loop.vertex_index]
     mesh.update()
-    obj = bpy.data.objects.new(stem, mesh); collection.objects.link(obj)
-    for poly in mesh.polygons: poly.use_smooth = False
+    obj = bpy.data.objects.new(stem, mesh)
+    collection.objects.link(obj)
+    for poly in mesh.polygons:
+        poly.use_smooth = False
     return obj
 
 
 def build_level(scene_name, objects, mesh_cache, collection):
-    """Build an entire level — one Blender object per mesh instance."""
     all_px = [o['pos'][0]*SCENE_SCALE for o in objects]
     all_py = [o['pos'][1]*SCENE_SCALE for o in objects]
     all_pz = [o['pos'][2]*SCENE_SCALE for o in objects]
@@ -238,8 +264,9 @@ def build_level(scene_name, objects, mesh_cache, collection):
             mat_groups[mk].append(plane)
         if not mat_groups: continue
 
-        mat_keys = list(mat_groups.keys()); mk2i = {mk: i for i, mk in enumerate(mat_keys)}
-        verts=[]; faces=[]; uvs=[]; mat_ids=[]; vi=0
+        mat_keys = list(mat_groups.keys())
+        mk2i = {mk: i for i, mk in enumerate(mat_keys)}
+        verts = []; faces = []; uvs = []; mat_ids = []; vi = 0
         for mk, plist in mat_groups.items():
             mi = mk2i[mk]
             for plane in plist:
@@ -252,15 +279,20 @@ def build_level(scene_name, objects, mesh_cache, collection):
                         verts.append((wx, -wz, wy)); uvs.append((u,v))
                     faces.append((vi,vi+1,vi+2)); mat_ids.append(mi); vi += 3
 
-        mesh = bpy.data.meshes.new(label); mesh.from_pydata(verts, [], faces)
+        mesh = bpy.data.meshes.new(label)
+        mesh.from_pydata(verts, [], faces)
         for mk in mat_keys:
             rep = mat_groups[mk][0]
             mesh.materials.append(RM.get_material(rep['texture_name'], rep['color']))
-        for fi, mi in enumerate(mat_ids): mesh.polygons[fi].material_index = mi
+        for fi, mi in enumerate(mat_ids):
+            mesh.polygons[fi].material_index = mi
         uv_layer = mesh.uv_layers.new(name='UVMap')
-        for li, loop in enumerate(mesh.loops): uv_layer.data[li].uv = uvs[loop.vertex_index]
+        for li, loop in enumerate(mesh.loops):
+            uv_layer.data[li].uv = uvs[loop.vertex_index]
         mesh.update()
-        bl_obj = bpy.data.objects.new(label, mesh); collection.objects.link(bl_obj)
-        for poly in mesh.polygons: poly.use_smooth = False
+        bl_obj = bpy.data.objects.new(label, mesh)
+        collection.objects.link(bl_obj)
+        for poly in mesh.polygons:
+            poly.use_smooth = False
         built += 1
     return built
