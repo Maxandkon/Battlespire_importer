@@ -39,3 +39,5 @@ The add-on automatically applies the corresponding textures to objects
 - Placing Water – the game adds and controls it entirely through code
 - Placing of Entities and Effects – same as with water, these are dynamic values and are not fixed relative to the level
 - *Suggestions*
+- ...
+- Get the pet for ESO "[Egg with Legs](https://en.uesp.net/wiki/Online:Half-Hatched_Guarling)", which was a cross-promotion with Castles but was never re-released; if anyone from Beth or ZOS is reading this, I've written over 90% of the Castles documentation on UESP, so I officially deserve this Egg in recognition of my dedication... or else
