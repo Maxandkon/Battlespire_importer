@@ -27,13 +27,18 @@ Features:
 The add-on automatically applies the corresponding textures to objects
 
 # Special thanks
-- [ariscop](https://github.com/ariscop) – for his [battlespire-tool](https://github.com/ariscop/battlespire-tools) that was used as starting point
 - [Hagrin Frost-Eye](https://en.uesp.net/wiki/User:Hagrin_Frost-Eye) – for providing save files and game guidance
+- [ariscop](https://github.com/ariscop) – for his [battlespire-tool](https://github.com/ariscop/battlespire-tools) that was used as starting point
+
+# Links 
+- [Info on the game](https://en.uesp.net/wiki/Battlespire:Battlespire) 
+- [Table on which ID corresponds to which location](https://github.com/Maxandkon/Battlespire_importer/wiki/Locations-ID)
+
 
 # To-do list
 - Find the ideal scale for the position – the current value is `0.0256`, but it seems the closest one would be something like `5/190`, as unclear how many decimal places there are
 - Create data tables:
-  - Of actual Locations names/usage towards ID
+  - ~~Of actual Locations names/usage towards ID~~
   - Of objects names and what they are
 - Restoring original lighting – could potentially make imported locations incompatible
 - Placing Water – the game adds and controls it entirely through code
