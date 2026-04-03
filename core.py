@@ -70,8 +70,7 @@ class BSAArchive:
             e = ext.upper(); return [n for n in self._toc if n.upper().endswith(e)]
         return list(self._toc.keys())
 
-    def has(self, name):
-        return name in self._toc
+    def has(self, name): return name in self._toc
 
     def get(self, name):
         if name in self._cache: return self._cache[name]
@@ -142,7 +141,7 @@ def bsi_decode_image(bsi_data):
     for i in range(min(128, len(hicl)//2)):
         c = unpack_from('<H', hicl, i*2)[0]
         pal[i<<1] = (((c>>11)&0x1F)/31.0, ((c>>6)&0x1F)/31.0, ((c>>1)&0x1F)/31.0, 1.0)
-    pal[0] = (0.0,0.0,0.0,1.0)
+    pal[0] = (0.0, 0.0, 0.0, 0.0)   # index 0 = transparent
     frame = pixel_data[:w*h]
     if HAS_NP:
         pal_np = np.array(pal, dtype=np.float32)

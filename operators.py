@@ -107,7 +107,6 @@ class BS_OT_ImportUnused(Operator):
             if not raw: continue
             model = parse_3d(raw, RM.tex_sizes)
             if not model or not model['planes']: continue
-
             is_large = model['radius'] > OVERSIZE_RADIUS
             target_col = col_large if is_large else col_normal
             obj = build_mesh_object(model, name, target_col)
@@ -115,11 +114,10 @@ class BS_OT_ImportUnused(Operator):
                 obj.location.x = x_offset
                 x_offset += model['radius'] * 2.0 + 0.5
                 count_normal += 1
-            elif obj:
-                count_large += 1
+            elif obj: count_large += 1
 
         self.report({'INFO'},
-            f"{count_normal} assets + {count_large} oversized (hidden) in {time.time()-t0:.1f}s")
+            f"{count_normal} assets + {count_large} oversized ({time.time()-t0:.1f}s)")
         return {'FINISHED'}
 
 
@@ -142,7 +140,6 @@ class BS_OT_ImportModelByName(Operator):
         model = parse_3d(raw, RM.tex_sizes)
         if not model:
             self.report({'ERROR'}, f"Failed to parse {name}"); return {'CANCELLED'}
-
         col = bpy.data.collections.get("BS_Models")
         if not col:
             col = bpy.data.collections.new("BS_Models")
@@ -202,8 +199,7 @@ class BS_OT_ImportFolder(Operator):
         for fname in sorted(files):
             with open(os.path.join(self.directory, fname), 'rb') as f: data = f.read()
             model = parse_3d(data, ts)
-            if model:
-                build_mesh_object(model, fname, col); imported += 1
+            if model: build_mesh_object(model, fname, col); imported += 1
         self.report({'INFO'}, f"Imported {imported} models")
         return {'FINISHED'}
 
