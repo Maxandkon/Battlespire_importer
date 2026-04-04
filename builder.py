@@ -289,5 +289,17 @@ def build_level(scene_name, objects, mesh_cache, collection):
         mesh.update()
         bl_obj = bpy.data.objects.new(label, mesh); collection.objects.link(bl_obj)
         for poly in mesh.polygons: poly.use_smooth = False
+
+        # Move origin to bounding box center
+        # Set origin to placement point (model's own 0,0,0 in world space)
+        if verts:
+            ox_obj = -px0
+            oy_obj = -pz0
+            oz_obj = py0
+            for v in mesh.vertices:
+                v.co.x -= ox_obj; v.co.y -= oy_obj; v.co.z -= oz_obj
+            bl_obj.location = (ox_obj, oy_obj, oz_obj)
+            mesh.update()
+
         built += 1
     return built

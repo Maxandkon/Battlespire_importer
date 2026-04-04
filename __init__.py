@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Battlespire 3D Importer",
     "author": "Maxandkon",
-    "version": (1, 1, 0),
+    "version": (1, 1, 1),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > Battlespire, File > Import",
     "description": "Import 3D models and levels from An Elder Scrolls Legend: Battlespire",
