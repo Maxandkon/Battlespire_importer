@@ -141,7 +141,7 @@ def bsi_decode_image(bsi_data):
     for i in range(min(128, len(hicl)//2)):
         c = unpack_from('<H', hicl, i*2)[0]
         pal[i<<1] = (((c>>11)&0x1F)/31.0, ((c>>6)&0x1F)/31.0, ((c>>1)&0x1F)/31.0, 1.0)
-    pal[0] = (0.0, 0.0, 0.0, 0.0)   # index 0 = transparent
+    pal[0] = (0.0, 0.0, 0.0, 0.0)
     frame = pixel_data[:w*h]
     if HAS_NP:
         pal_np = np.array(pal, dtype=np.float32)
@@ -223,6 +223,10 @@ def parse_3d(data, tex_sizes):
     return {'points':points,'planes':planes,'radius':hdr['radius']*0.0001,'texture_names':sorted(texture_names)}
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  BS6 SCENE + LIGHTS
+# ═══════════════════════════════════════════════════════════════════════════
+
 def bs6_blocks(data):
     pos = 0
     while pos + 8 <= len(data):
@@ -254,6 +258,27 @@ def parse_bs6_scene(data):
                             objects.append({'mesh': mesh, 'pos': pos or (0,0,0), 'rot': rot or (0,0,0)})
     return objects
 
+
+def parse_bs6_lights(data):
+    lights = []
+    for tag, chunk in bs6_blocks(data):
+        if tag != 'GNRL': continue
+        for tag2, chunk2 in bs6_blocks(chunk):
+            if tag2 != 'LITS': continue
+            for tag3, chunk3 in bs6_blocks(chunk2):
+                if tag3 != 'LITD': continue
+                pos = (0, 0, 0); radius = 512; brightness = 32
+                for tag4, chunk4 in bs6_blocks(chunk3):
+                    if   tag4 == 'POSI': pos = unpack_from('<3i', chunk4)
+                    elif tag4 == 'RADI': radius = unpack_from('<I', chunk4)[0]
+                    elif tag4 == 'BRIT': brightness = unpack_from('<I', chunk4)[0]
+                lights.append({'pos': pos, 'radius': radius, 'brightness': brightness})
+    return lights
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  ROTATION
+# ═══════════════════════════════════════════════════════════════════════════
 
 def _fixed_to_rad(v): return v * math.tau / 2048.0
 

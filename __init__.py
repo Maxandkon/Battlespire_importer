@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Battlespire 3D Importer",
     "author": "Maxandkon",
-    "version": (1, 1, 1),
+    "version": (1, 1, 2),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > Battlespire, File > Import",
     "description": "Import 3D models and levels from An Elder Scrolls Legend: Battlespire",
@@ -9,7 +9,7 @@ bl_info = {
 }
 
 import bpy
-from bpy.props import StringProperty, EnumProperty, PointerProperty
+from bpy.props import StringProperty, EnumProperty, PointerProperty, BoolProperty
 from bpy.types import AddonPreferences, Panel, PropertyGroup
 import os
 
@@ -40,18 +40,14 @@ translations_dict = {
         ("*", "Load Game Data"): "Завантажити дані",
         ("*", "Level"): "Локація",
         ("*", "This may take a moment"): "Це може зайняти час",
+        ("*", "Import Lights"): "Імпорт освітлення",
     },
 }
 
 
 class BS_AddonPreferences(AddonPreferences):
     bl_idname = __package__
-
-    gamedata_path: StringProperty(
-        name="GAMEDATA Folder",
-        subtype='DIR_PATH',
-        default="",
-    )
+    gamedata_path: StringProperty(name="GAMEDATA Folder", subtype='DIR_PATH', default="")
 
     def draw(self, context):
         layout = self.layout
@@ -83,6 +79,7 @@ def _get_level_items(self, context):
 class BS_SceneProperties(PropertyGroup):
     level_enum: EnumProperty(name="Level", items=_get_level_items)
     model_name: StringProperty(name="Model Name", default="")
+    import_lights: BoolProperty(name="Import Lights", default=True)
 
 
 class BS_PT_MainPanel(Panel):
@@ -120,6 +117,7 @@ class BS_PT_MainPanel(Panel):
         box = layout.box()
         box.label(text="Import Level", icon='WORLD_DATA')
         box.prop(props, "level_enum", text="")
+        box.prop(props, "import_lights")
         box.operator("battlespire.import_level", text="Import", icon='IMPORT')
 
         layout.separator()
@@ -147,8 +145,7 @@ classes = (
 )
 
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
+    for cls in classes: bpy.utils.register_class(cls)
     bpy.types.Scene.bs_props = PointerProperty(type=BS_SceneProperties)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
     bpy.app.handlers.load_post.append(_on_load_post)

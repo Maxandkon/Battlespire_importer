@@ -7,8 +7,8 @@ from bpy.props import StringProperty
 from bpy.types import Operator
 import os, time
 
-from .core import parse_3d, parse_bs6_scene
-from .builder import RM, build_mesh_object, build_level, OVERSIZE_RADIUS
+from .core import parse_3d, parse_bs6_scene, parse_bs6_lights
+from .builder import RM, build_mesh_object, build_level, build_lights, OVERSIZE_RADIUS
 
 
 class BS_OT_LoadData(Operator):
@@ -67,7 +67,13 @@ class BS_OT_ImportLevel(Operator):
         bpy.context.scene.collection.children.link(col)
         built = build_level(level, valid, mesh_cache, col)
 
-        self.report({'INFO'}, f"{stem}: {built} objects ({time.time()-t0:.1f}s)")
+        light_count = 0
+        if context.scene.bs_props.import_lights:
+            lights = parse_bs6_lights(scene_data)
+            if lights:
+                light_count = build_lights(lights, valid, col)
+
+        self.report({'INFO'}, f"{stem}: {built} objects, {light_count} lights ({time.time()-t0:.1f}s)")
         return {'FINISHED'}
 
 

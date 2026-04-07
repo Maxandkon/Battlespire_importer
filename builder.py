@@ -8,7 +8,7 @@ import os, glob
 from collections import defaultdict
 from .core import (
     BSAArchive, bsi_get_size, bsi_decode_image, parse_3d,
-    parse_bs6_scene, rotate_point, SCENE_SCALE,
+    parse_bs6_scene, parse_bs6_lights, rotate_point, SCENE_SCALE,
 )
 
 OVERSIZE_RADIUS = 5.0
@@ -42,13 +42,11 @@ class ResourceManager:
             return True
         self.reset()
         self._gamedata = gamedata_path
-
         for fname, attr in [("3D.BSA", "_model_bsa"), ("3D.BS6", "_model_bs6"),
                             ("BSI.BSA", "_bsi_bsa"), ("BS6.BSA", "_bs6_bsa")]:
             p = os.path.join(gamedata_path, fname)
             if os.path.isfile(p):
                 setattr(self, attr, BSAArchive(p))
-
         if self._bsi_bsa:
             for fn in self._bsi_bsa.names('.BSI'):
                 stem = os.path.splitext(fn)[0].lower()
@@ -57,26 +55,20 @@ class ResourceManager:
                     sz = bsi_get_size(raw)
                     if sz: self.tex_sizes[stem] = sz
                 self._bsi_name_index[stem] = fn
-
         self._loaded = self._model_bsa is not None
         return self._loaded
 
-    # ── Mesh access ───────────────────────────────────────────────────
-
     def get_mesh_raw(self, name):
-        """Get .3D data from archives or loose GAMEDATA files."""
         key = name.upper()
         if not key.endswith('.3D'): key += '.3D'
         for arc in [self._model_bsa, self._model_bs6]:
             if arc:
                 data = arc.get(key)
                 if data: return data
-        # Fallback: loose .3D file in GAMEDATA
         if self._gamedata:
             loose = os.path.join(self._gamedata, key)
             if os.path.isfile(loose):
-                with open(loose, 'rb') as f:
-                    return f.read()
+                with open(loose, 'rb') as f: return f.read()
         return None
 
     def get_model_names(self):
@@ -85,10 +77,7 @@ class ResourceManager:
             if arc: names.update(arc.names('.3D'))
         return sorted(names)
 
-    # ── Scene access ──────────────────────────────────────────────────
-
     def get_scene_names(self):
-        """All scenes: BS6.BSA archive + loose .BS6 files in GAMEDATA."""
         scenes = []
         if self._bs6_bsa:
             scenes.extend(self._bs6_bsa.names('.BS6'))
@@ -100,18 +89,14 @@ class ResourceManager:
         return sorted(scenes)
 
     def get_scene_data(self, name):
-        """Get scene data from BS6.BSA or loose file."""
         if self._bs6_bsa:
             data = self._bs6_bsa.get(name)
             if data: return data
         if self._gamedata:
             loose = os.path.join(self._gamedata, name)
             if os.path.isfile(loose):
-                with open(loose, 'rb') as f:
-                    return f.read()
+                with open(loose, 'rb') as f: return f.read()
         return None
-
-    # ── BSI texture resolve ───────────────────────────────────────────
 
     def resolve_bsi(self, tex_name):
         if not self._bsi_bsa: return None
@@ -121,26 +106,19 @@ class ResourceManager:
         matches = sorted([v for k, v in self._bsi_name_index.items() if k.startswith(tex_name)])
         return matches[0] if len(matches) == 1 else None
 
-    # ── Blender image — lookup by name, decode on miss ────────────────
-
     def get_image(self, tex_name):
         existing = bpy.data.images.get(tex_name)
         if existing: return existing
         if tex_name in self._failed_images: return None
-
         bsi_fname = self.resolve_bsi(tex_name)
         bsi_data = self._bsi_bsa.get(bsi_fname) if bsi_fname and self._bsi_bsa else None
-        if not bsi_data:
-            self._failed_images.add(tex_name); return None
+        if not bsi_data: self._failed_images.add(tex_name); return None
         result = bsi_decode_image(bsi_data)
-        if not result:
-            self._failed_images.add(tex_name); return None
+        if not result: self._failed_images.add(tex_name); return None
         w, h, pixels = result
         img = bpy.data.images.new(tex_name, w, h, alpha=True)
         img.pixels = pixels; img.pack()
         return img
-
-    # ── Blender material — lookup by name, create on miss ─────────────
 
     @staticmethod
     def _mat_name(tex_name, color):
@@ -152,11 +130,9 @@ class ResourceManager:
         mat_name = self._mat_name(tex_name, color)
         existing = bpy.data.materials.get(mat_name)
         if existing: return existing
-
         mat = bpy.data.materials.new(name=mat_name)
         mat.use_nodes = True
         nodes = mat.node_tree.nodes; links = mat.node_tree.links; nodes.clear()
-
         bsdf = nodes.new('ShaderNodeBsdfPrincipled'); bsdf.location = (0, 0)
         bsdf.inputs['Metallic'].default_value = 0.0
         bsdf.inputs['Roughness'].default_value = 1.0
@@ -164,12 +140,9 @@ class ResourceManager:
             if n in bsdf.inputs: bsdf.inputs[n].default_value = 1.0; break
         for n in ['Specular IOR Level', 'Specular']:
             if n in bsdf.inputs: bsdf.inputs[n].default_value = 0.0; break
-
         out = nodes.new('ShaderNodeOutputMaterial'); out.location = (300, 0)
         links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
-
         if tex_name and tex_name.startswith('1_'):
-            # Phantom texture — fully transparent, Alpha Blend
             bsdf.inputs['Alpha'].default_value = 0.0
             self._set_alpha_blend(mat)
         elif tex_name:
@@ -185,7 +158,6 @@ class ResourceManager:
                 bsdf.inputs['Base Color'].default_value = (*color, 1.0)
         else:
             bsdf.inputs['Base Color'].default_value = (*color, 1.0)
-
         mat.use_backface_culling = False
         return mat
 
@@ -290,16 +262,49 @@ def build_level(scene_name, objects, mesh_cache, collection):
         bl_obj = bpy.data.objects.new(label, mesh); collection.objects.link(bl_obj)
         for poly in mesh.polygons: poly.use_smooth = False
 
-        # Move origin to bounding box center
-        # Set origin to placement point (model's own 0,0,0 in world space)
+        # Origin at placement point
         if verts:
-            ox_obj = -px0
-            oy_obj = -pz0
-            oz_obj = py0
+            ox_obj = -px0; oy_obj = -pz0; oz_obj = py0
             for v in mesh.vertices:
                 v.co.x -= ox_obj; v.co.y -= oy_obj; v.co.z -= oz_obj
             bl_obj.location = (ox_obj, oy_obj, oz_obj)
             mesh.update()
 
+        built += 1
+    return built
+
+
+def build_lights(lights, objects, collection):
+    if not lights or not objects: return 0
+    all_px = [o['pos'][0]*SCENE_SCALE for o in objects]
+    all_py = [o['pos'][1]*SCENE_SCALE for o in objects]
+    all_pz = [o['pos'][2]*SCENE_SCALE for o in objects]
+    ox = sum(all_px)/len(all_px) if all_px else 0
+    oy = max(all_py) if all_py else 0
+    oz = sum(all_pz)/len(all_pz) if all_pz else 0
+
+    built = 0
+    for i, lit in enumerate(lights):
+        px = lit['pos'][0]*SCENE_SCALE - ox
+        py = -(lit['pos'][1]*SCENE_SCALE - oy)
+        pz = lit['pos'][2]*SCENE_SCALE - oz
+        radius = lit['radius'] * SCENE_SCALE
+        energy = lit['brightness'] / 128.0 * 10.0
+
+        light_data = bpy.data.lights.new(name=f"Light_{i:03d}", type='POINT')
+        light_data.energy = energy * 5000.0
+        light_data.shadow_soft_size = radius
+        light_data.use_shadow = False
+        light_data.color = (1.0, 0.9, 0.75)
+
+        try:
+            light_data.use_custom_distance = True
+            light_data.cutoff_distance = radius
+        except AttributeError:
+            light_data.shadow_soft_size = radius
+
+        light_obj = bpy.data.objects.new(f"Light_{i:03d}", light_data)
+        light_obj.location = (-px, -pz, py)
+        collection.objects.link(light_obj)
         built += 1
     return built
