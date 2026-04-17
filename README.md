@@ -40,9 +40,15 @@ The add-on automatically applies the corresponding textures to objects
 - Create data tables:
   - ~~Of actual Locations names/usage towards ID~~
   - Of objects names and what they are
-- Restoring original lighting – could potentially make imported locations incompatible
-- Placing Water – the game adds and controls it entirely through code
-- Placing of Entities and Effects – same as with water, these are dynamic values and are not fixed relative to the level
+- Restoring original lighting
+  - It's likely that the Point light won't translate exactly, due to the different rendering systems, but at least to get as close as possible
+  - I couldn't find the World lighting; it seems like it's actually taken from the texture
+- Water 
+  - The code points to the texture `water2`, but either a filter has been applied to it in the game, or the code is actually retrieving it from a file other than the main texture file
+  - This likely also comes from the WATER.TBL, which is an underwater palette; this can later be imported as some Wire Block
+  - The wave animation in WATER.001, but I have no idea how to replicate it in Blender
+- Placing of Entities and Effects – being analysed
+- Animations without having to export and save .png-s – potentially impossible
 - *Suggestions*
 - ...
 - Get the pet for ESO "[Egg with Legs](https://en.uesp.net/wiki/Online:Half-Hatched_Guarling)", which was a cross-promotion with Castles but was never re-released; if anyone from Beth or ZOS is reading this, I've written over 90% of the Castles documentation on UESP, so I officially deserve this Egg in recognition of my dedication... or else
